@@ -1,0 +1,30 @@
+{
+  "name": "scaffold-hbar-saucerswap-auto-dca",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaucerSwap Auto-DCA: keeperless recurring SaucerSwap buys on Hedera, guarded by Pyth prices and scheduled by the Hedera Schedule Service.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.18.3"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "test:setup": "node --test scripts/setup.test.mjs",
+    "hardhat:compile": "npm run compile -w @auto-dca/hardhat",
+    "hardhat:abi": "npm run abi -w @auto-dca/hardhat",
+    "hardhat:test": "npm run test -w @auto-dca/hardhat",
+    "hardhat:account": "npm run account -w @auto-dca/hardhat",
+    "hardhat:deploy": "npm run deploy -w @auto-dca/hardhat",
+    "hardhat:demo-plan": "npm run demo-plan -w @auto-dca/hardhat",
+    "hardhat:audit-relay": "npm run audit-relay -w @auto-dca/hardhat",
+    "next:dev": "npm run dev -w @auto-dca/nextjs",
+    "next:build": "npm run build -w @auto-dca/nextjs",
+    "next:start": "npm run start -w @auto-dca/nextjs",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test:setup && npm run test --workspaces --if-present",
+    "build": "npm run compile -w @auto-dca/hardhat && npm run build -w @auto-dca/nextjs"
+  }
+}

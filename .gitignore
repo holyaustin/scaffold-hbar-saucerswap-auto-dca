@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+cache/
+artifacts/
+typechain-types/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets: never commit these
+.env
+.env.local
+.env.*.local
+!.env.example
+
+.DS_Store
+
+# HCS relay resume cursors (local state)
+packages/hardhat/deployments/hcs-relay-state.*.json

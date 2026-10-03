@@ -1,0 +1,13 @@
+{
+  "name": "@auto-dca/config",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Single source of truth for Hedera network settings and protocol addresses.",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check index.js"
+  }
+}
