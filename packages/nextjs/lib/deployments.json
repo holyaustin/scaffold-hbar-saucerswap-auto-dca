@@ -1,1 +1,7 @@
-{ "testnet": null, "mainnet": null }
+{
+  "testnet": {
+    "vault": "0x518276d6093796FC498660394d47160D29D70435",
+    "deployedAt": "2026-10-03T23:43:35.970Z"
+  },
+  "mainnet": null
+}
