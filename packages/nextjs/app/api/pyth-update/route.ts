@@ -3,6 +3,7 @@ import { hermesUrl, parseFeedIds, parseHermesUpdate } from "~/lib/pyth";
 
 export const dynamic = "force-dynamic";
 
+
 /**
  * Fetch a signed Pyth price update from Hermes for the requested feeds.
  * The Pyth API key stays on the server; the browser only ever sees the signed payload.
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
   }
 
   const baseUrl = process.env.PYTH_HERMES_URL ?? "https://hermes.pyth.network";
+  // https://pyth.dourolabs.app/hermes
+  //https://hermes.pyth.network
+  
   try {
     const response = await fetch(hermesUrl(baseUrl, ids), {
       headers: { Authorization: `Bearer ${apiKey}` },

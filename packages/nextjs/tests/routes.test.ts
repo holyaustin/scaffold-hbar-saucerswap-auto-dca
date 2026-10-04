@@ -13,7 +13,7 @@ afterEach(() => {
 describe("GET /api/health", () => {
   it("reports ok with the network and vault state", async () => {
     const body = await health().json();
-    expect(body).toMatchObject({ ok: true, network: "testnet", networkStatus: "live", vaultConfigured: false, auditTopicConfigured: false });
+    expect(body).toMatchObject({ ok: true, network: "testnet", networkStatus: "live", vaultConfigured: true, auditTopicConfigured: false });
   });
 });
 
