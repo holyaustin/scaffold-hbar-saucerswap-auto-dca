@@ -1,5 +1,6 @@
 import type { ContractFunctionReturnType } from "viem";
-import { formatAmount, formatCountdown, formatInterval, skipReasonLabel } from "~/lib/format";
+import { formatAmount, formatCountdown, formatInterval } from "~/lib/format";
+import { describeGuard } from "~/lib/quote";
 import type { vaultAbi } from "~/lib/vaultAbi";
 import { CadenceStrip } from "./CadenceStrip";
 
@@ -11,6 +12,8 @@ export interface PlanView {
   symbolIn: string;
   symbolOut: string;
   preview: { reason: number; expected: bigint; minimum: bigint } | null;
+  /** What the live SaucerSwap pool would pay for one purchase, or null when it could not be quoted. */
+  quote: bigint | null;
 }
 
 export type PlanAction = "pause" | "resume" | "cancel" | "claim" | "run" | "refresh";
@@ -19,6 +22,8 @@ interface PlanCardProps {
   view: PlanView;
   now: number;
   busy: boolean;
+  /** The local demo keeps its own oracle fresh, so it has no Refresh price button. */
+  showRefresh: boolean;
   onAction: (action: PlanAction, id: bigint) => void;
 }
 
@@ -32,8 +37,12 @@ function statusOf(plan: PlanData): { text: string; className: string } {
   return { text: plan.scheduled ? "Scheduled by HSS" : "Waiting for a manual run", className: "status" };
 }
 
-export function PlanCard({ view, now, busy, onAction }: PlanCardProps) {
-  const { id, plan, symbolIn, symbolOut, preview } = view;
+export function PlanCard({ view, now, busy, showRefresh, onAction }: PlanCardProps) {
+  const { id, plan, symbolIn, symbolOut, preview, quote } = view;
+  const verdict =
+    preview && plan.active
+      ? describeGuard({ preview, quote, symbolOut, decimalsOut: plan.decimalsOut, maxSlippageBps: plan.maxSlippageBps })
+      : null;
   const status = statusOf(plan);
   const running = plan.active && !plan.paused;
   const due = running && Number(plan.nextRunAt) <= now;
@@ -77,13 +86,7 @@ export function PlanCard({ view, now, busy, onAction }: PlanCardProps) {
         )}
       </dl>
 
-      {preview && plan.active && (
-        <p className={`guard ${preview.reason === 0 ? "go" : "hold"}`}>
-          {preview.reason === 0
-            ? `Price guard says go: expect about ${formatAmount(preview.expected, plan.decimalsOut)} ${symbolOut}, never less than ${formatAmount(preview.minimum, plan.decimalsOut)}.`
-            : `Price guard would skip right now: ${skipReasonLabel(preview.reason).toLowerCase()}.`}
-        </p>
-      )}
+      {verdict && <p className={`guard ${verdict.tone}`}>{verdict.text}</p>}
 
       <div className="actions">
         {plan.accruedOut > 0n && (
@@ -91,7 +94,7 @@ export function PlanCard({ view, now, busy, onAction }: PlanCardProps) {
             Claim {symbolOut}
           </button>
         )}
-        {plan.active && (
+        {plan.active && showRefresh && (
           <button className="btn quiet" disabled={busy} onClick={act("refresh")}>
             Refresh price
           </button>

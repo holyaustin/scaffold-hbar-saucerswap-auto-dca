@@ -197,3 +197,133 @@ describe("describeEvents", () => {
     expect(lines[1].text).toContain("Run now");
   });
 });
+
+import { comparePoolToOracle, describeGuard, quoterAbi } from "~/lib/quote";
+import { parseDemoConfig } from "~/lib/demo";
+import { fetchLocalEvents } from "~/lib/localEvents";
+import { txLink } from "~/lib/format";
+
+describe("pool versus oracle", () => {
+  it("measures the gap and whether the swap would pass", () => {
+    // Oracle expects 50, floor is 47.5 (5% slippage), in 8-decimal units.
+    const expected = 5_000_000_000n;
+    const minimum = 4_750_000_000n;
+    expect(comparePoolToOracle(5_000_000_000n, expected, minimum)).toEqual({ gapBps: 0, passes: true });
+    expect(comparePoolToOracle(4_800_000_000n, expected, minimum)).toEqual({ gapBps: 400, passes: true });
+    expect(comparePoolToOracle(4_000_000_000n, expected, minimum)).toEqual({ gapBps: 2000, passes: false });
+    expect(comparePoolToOracle(5_100_000_000n, expected, minimum)).toEqual({ gapBps: -200, passes: true });
+    expect(comparePoolToOracle(1n, 0n, 0n).gapBps).toBe(0);
+  });
+
+  const base = { symbolOut: "WHBAR", decimalsOut: 8, maxSlippageBps: 500 };
+  const preview = { reason: 0, expected: 5_000_000_000n, minimum: 4_750_000_000n };
+
+  it("explains a skip caused by the oracle itself", () => {
+    const verdict = describeGuard({ ...base, preview: { ...preview, reason: 1 }, quote: null });
+    expect(verdict).toEqual({ tone: "hold", text: "Price guard would skip right now: price too old." });
+  });
+
+  it("predicts a skip when the pool pays too little, before any gas is spent", () => {
+    const verdict = describeGuard({ ...base, preview, quote: 4_000_000_000n });
+    expect(verdict.tone).toBe("hold");
+    expect(verdict.text).toContain("pool pays 40 WHBAR, 20% less than the oracle's 50 WHBAR");
+    expect(verdict.text).toContain("Your limit is 5%");
+  });
+
+  it("says go with the live comparison when the pool is within the limit", () => {
+    expect(describeGuard({ ...base, preview, quote: 4_800_000_000n }).text).toContain("4% under the oracle's 50 WHBAR");
+    expect(describeGuard({ ...base, preview, quote: 5_000_000_000n }).text).toContain("level with the oracle's 50 WHBAR");
+    expect(describeGuard({ ...base, preview, quote: 5_100_000_000n }).text).toContain("2% over the oracle's 50 WHBAR");
+  });
+
+  it("still gives a useful answer when no pool quote is available", () => {
+    const verdict = describeGuard({ ...base, preview, quote: null });
+    expect(verdict.tone).toBe("go");
+    expect(verdict.text).toContain("pool quote is not available");
+  });
+
+  it("uses the QuoterV2 signature SaucerSwap documents", () => {
+    expect(quoterAbi[0].name).toBe("quoteExactInput");
+    expect(quoterAbi[0].inputs.map((input) => input.type)).toEqual(["bytes", "uint256"]);
+    expect(quoterAbi[0].outputs.map((output) => output.type)).toEqual(["uint256", "uint160[]", "uint32[]", "uint256"]);
+  });
+});
+
+describe("demo config", () => {
+  const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
+  const valid = {
+    chainId: 31337,
+    deployer: addr(1),
+    vault: addr(2),
+    pyth: addr(3),
+    router: addr(4),
+    quoter: addr(5),
+    minIntervalSeconds: 5,
+    poolFee: 3000,
+    rates: { good: 500, bad: 400 },
+    tokens: {
+      in: { address: addr(6), symbol: "mUSDC", decimals: 6 },
+      out: { address: addr(7), symbol: "mWHBAR", decimals: 8 },
+    },
+    priceIds: { in: `0x${"aa".repeat(32)}`, out: `0x${"bb".repeat(32)}` },
+  };
+
+  it("accepts a well-formed config", () => {
+    expect(parseDemoConfig(valid)?.vault).toBe(addr(2));
+  });
+
+  it.each([
+    ["null", null],
+    ["a string", "nope"],
+    ["a bad address", { ...valid, vault: "0x123" }],
+    ["a bad feed id", { ...valid, priceIds: { in: "0x12", out: valid.priceIds.out } }],
+    ["a missing token", { ...valid, tokens: { in: valid.tokens.in } }],
+    ["missing rates", { ...valid, rates: undefined }],
+  ])("rejects %s", (_label, input) => {
+    expect(parseDemoConfig(input)).toBeNull();
+  });
+});
+
+describe("local events", () => {
+  it("decodes vault logs with block times, newest first, and skips foreign logs", async () => {
+    const topics = (planId: bigint) => [...encodeEventTopics({ abi: vaultAbi, eventName: "RunSkipped", args: { planId } })];
+    const data = encodeAbiParameters([{ type: "uint8" }], [2]);
+    const logs = [
+      { topics: topics(1n), data, blockNumber: 5n, transactionHash: "0xaa" },
+      { topics: [`0x${"11".repeat(32)}`], data: "0x", blockNumber: 6n, transactionHash: "0xbb" },
+      { topics: topics(1n), data, blockNumber: 7n, transactionHash: "0xcc" },
+    ];
+    const client = {
+      getLogs: vi.fn().mockResolvedValue(logs),
+      getBlock: vi.fn(async ({ blockNumber }: { blockNumber: bigint }) => ({ timestamp: blockNumber * 100n })),
+    };
+
+    const events = await fetchLocalEvents(client as never, "0x0000000000000000000000000000000000000002");
+    expect(events.map((event) => [event.txHash, event.timestamp])).toEqual([
+      ["0xcc", 700],
+      ["0xaa", 500],
+    ]);
+    expect(events[0].args).toMatchObject({ planId: 1n, reason: 2 });
+  });
+});
+
+describe("local network and links", () => {
+  it("resolves the offline demo network without exposing it as a real one", () => {
+    expect(activeNetworkKey("local")).toBe("local");
+    const local = activeNetwork("local");
+    expect(local).toMatchObject({ chainId: 31337, explorerUrl: null, mirrorUrl: null, status: "live" });
+    expect(vaultAddress("local", "0x1234567890abcdef1234567890abcdef12345678")).toBeNull();
+    expect(auditTopicId("local", "0.0.1")).toBeNull();
+  });
+
+  it("gives real networks a quoter and Pyth address", () => {
+    const testnet = activeNetwork("testnet");
+    expect(testnet.quoter).toMatch(/^0x[0-9a-f]{40}$/);
+    expect(testnet.pyth).toBe("0xA2aa501b19aff244D90cc15a4Cf739D2725B5729");
+  });
+
+  it("builds explorer links only when an explorer exists", () => {
+    expect(txLink("https://hashscan.io/testnet", "0xab")).toBe("https://hashscan.io/testnet/transaction/0xab");
+    expect(txLink(null, "0xab")).toBeNull();
+  });
+});

@@ -3,6 +3,7 @@ import path from "node:path";
 import { ethers, network } from "hardhat";
 import type { Log, LogDescription } from "ethers";
 import { saucerSwapAddresses } from "@auto-dca/config";
+import { adviceFor, findPools, isUsable, readToken } from "../lib/pairCheck";
 import { resolveDeployTarget } from "../lib/target";
 
 function required(name: string): string {
@@ -22,14 +23,17 @@ async function main() {
   const fee = Number(process.env.POOL_FEE ?? "3000");
   const runs = Number(process.env.RUNS ?? "3");
 
-  // 1. Make sure SaucerSwap actually has a pool for this pair, so the demo cannot fail silently.
+  // 1. Make sure SaucerSwap actually has a usable pool, so the demo cannot fail silently.
   const { factory } = saucerSwapAddresses(target.key);
-  const poolFactory = new ethers.Contract(factory, ["function getPool(address,address,uint24) view returns (address)"], signer);
-  const pool: string = await poolFactory.getPool(tokenIn, tokenOut, fee);
-  if (pool === ethers.ZeroAddress) {
-    throw new Error(`No SaucerSwap V2 pool for this pair at fee ${fee}. Try another POOL_FEE (500, 1500, 3000, 10000) or another pair.`);
+  const report = {
+    tokenA: await readToken(ethers.provider, tokenIn),
+    tokenB: await readToken(ethers.provider, tokenOut),
+    pools: await findPools(ethers.provider, factory, tokenIn, tokenOut),
+  };
+  if (!isUsable(report, fee)) {
+    throw new Error(`This pair cannot be used at fee ${fee}:\n- ${adviceFor(report, fee).join("\n- ")}\n\nFor a full report run: TOKEN_IN=${tokenIn} TOKEN_OUT=${tokenOut} npm run hardhat:check-pair`);
   }
-  console.log(`Found SaucerSwap pool ${pool}`);
+  console.log(`Found SaucerSwap pool ${report.pools.find((pool) => pool.fee === fee)?.pool}`);
 
   // 2. Approve the whole budget, then create the plan.
   const token = new ethers.Contract(

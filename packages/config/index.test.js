@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   NETWORKS,
+  LOCAL_DEMO,
   SYSTEM_CONTRACTS,
   idToEvmAddress,
   isLive,
@@ -39,6 +40,8 @@ test("both networks resolve complete SaucerSwap address sets", () => {
     }
   }
   assert.notEqual(saucerSwapAddresses("testnet").swapRouter, saucerSwapAddresses("mainnet").swapRouter);
+  assert.equal(saucerSwapAddresses("testnet").v1Router, "0x0000000000000000000000000000000000004b40");
+  assert.equal(saucerSwapAddresses("testnet").usdcToken, "0x0000000000000000000000000000000000001549");
 });
 
 test("resolveNetworkKey defaults to testnet and rejects unknown names", () => {
@@ -52,5 +55,16 @@ test("registry objects are frozen", () => {
   assert.throws(() => {
     "use strict";
     NETWORKS.testnet.status = "coming-soon";
+  }, TypeError);
+});
+
+test("the local demo network is separate from the real networks", () => {
+  assert.equal(LOCAL_DEMO.chainId, 31337);
+  assert.equal(LOCAL_DEMO.explorerUrl, null);
+  assert.equal(Object.keys(NETWORKS).includes("local"), false);
+  assert.throws(() => resolveNetworkKey("local"), /Unknown network/);
+  assert.throws(() => {
+    "use strict";
+    LOCAL_DEMO.rpcUrl = "http://evil";
   }, TypeError);
 });

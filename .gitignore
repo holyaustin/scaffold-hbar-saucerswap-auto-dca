@@ -19,3 +19,6 @@ next-env.d.ts
 
 # HCS relay resume cursors (local state)
 packages/hardhat/deployments/hcs-relay-state.*.json
+
+# Written by the local demo
+packages/nextjs/public/demo-config.json

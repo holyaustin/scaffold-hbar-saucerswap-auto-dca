@@ -88,3 +88,38 @@ Contracts in this template do not write to HCS. The relay (`packages/hardhat/scr
 **Why the cursor is `(timestamp, index)`:** all logs from one transaction share a consensus timestamp. A timestamp-only cursor would skip the remaining logs of a transaction if the relay stopped halfway through it. The query uses `gte` and the script filters by index locally.
 
 **Guarantees:** at-least-once delivery. A crash between publishing and saving can duplicate one record, never lose one. Records carry `txHash`, `event` and `planId` for de-duplication and for cross-checking against the mirror node.
+
+## Pool-versus-oracle check (web app)
+
+The contract protects every purchase with an oracle-derived floor. The web app adds a *preview* of that decision:
+
+1. `previewRun(planId)` returns the oracle side: skip reason (if any), expected output, and the slippage-adjusted floor.
+2. The app calls SaucerSwap's QuoterV2 `quoteExactInput(path, amountIn)` with the plan's stored path. It is an `eth_call`, so it costs no gas.
+3. `describeGuard` (`packages/nextjs/lib/quote.ts`) compares the pool's output with the floor and returns one sentence: *go*, or *would skip* with the gap in percent.
+
+This is advice only. The binding check still happens inside `execute` through `amountOutMinimum`, so a stale or manipulated preview can never cause a bad swap.
+
+## Offline demo
+
+```mermaid
+flowchart LR
+    subgraph "npm run demo:local"
+      L[Launcher scripts/demo-local.mjs]
+      N[Local Hardhat node :8545]
+      S[Scheduler script]
+      W[Next.js app :3000]
+    end
+    L --> N
+    L --> S
+    L --> W
+    S -- deploys mocks and the real vault --> N
+    S -- writes public/demo-config.json --> W
+    S -- every second: refresh oracle, fire due scheduled calls --> N
+    W -- JSON-RPC, unlocked test account --> N
+```
+
+- The launcher starts the node, waits for it, starts the scheduler (which deploys everything and writes `public/demo-config.json`), then starts the web app with `NEXT_PUBLIC_HEDERA_NETWORK=local`.
+- `packages/hardhat/lib/demo.ts` holds the logic. `keeperTick` fires each mock-HSS scheduled call once its time arrives, which is exactly what the Schedule Service does on Hedera. The same function is unit-tested in-process.
+- The scheduler mines at most one block per second, so chain time tracks the wall clock and the UI countdown stays accurate.
+- The web app signs through the node's unlocked accounts, so **no private key exists anywhere in the frontend**. The local network (`LOCAL_DEMO` in `packages/config`) is deliberately not part of `NETWORKS`, so the setup wizard, network switch and deploy guard can never select it.
+- The mock oracle and mock pool expose two switches (`setSimulateStale`, `setRate`) that the **Demo controls** panel uses to show the guard saying no.

@@ -96,3 +96,7 @@ form.plan-form .wide { grid-column: 1 / -1; }
 @keyframes beat { 50% { box-shadow: 0 0 0 8px rgba(36, 71, 214, 0.06); } }
 @media (prefers-reduced-motion: reduce) { .tick.next.pulse { animation: none; } }
 @media (max-width: 520px) { h1 { font-size: 1.9rem; } }
+
+.demo-panel { border: 1px dashed var(--amber); border-radius: 10px; padding: 16px 20px; background: var(--panel); }
+.demo-panel p { margin: 0 0 12px; color: var(--ink-soft); }
+.btn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #fff; }

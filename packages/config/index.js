@@ -66,6 +66,9 @@ const NETWORKS = Object.freeze({
       quoterId: "0.0.1390002",
       factoryId: "0.0.1197038",
       whbarTokenId: "0.0.15058",
+      // V1 router and SaucerSwap's own testnet USDC (not Circle's 0.0.429274, which has no pool).
+      v1RouterId: "0.0.19264",
+      usdcTokenId: "0.0.5449",
     }),
   }),
   mainnet: Object.freeze({
@@ -84,8 +87,29 @@ const NETWORKS = Object.freeze({
       quoterId: "0.0.3949424",
       factoryId: "0.0.3946833",
       whbarTokenId: "0.0.1456986",
+      v1RouterId: "0.0.3045981",
+      usdcTokenId: "0.0.456858",
     }),
   }),
+});
+
+/**
+ * A throwaway local network for the offline demo (`npm run demo:local`).
+ * It is deliberately NOT part of NETWORKS, so the setup wizard, the network switch and the deploy
+ * guard never offer it. Mock contracts stand in for HSS, HTS, Pyth and SaucerSwap there.
+ */
+const LOCAL_DEMO = Object.freeze({
+  key: "local",
+  label: "Local demo",
+  status: "live",
+  chainId: 31337,
+  hardhatName: "localhost",
+  rpcUrl: "http://127.0.0.1:8545",
+  mirrorUrl: null,
+  explorerUrl: null,
+  faucetUrl: null,
+  pyth: null,
+  saucerSwap: null,
 });
 
 /**
@@ -114,11 +138,14 @@ function saucerSwapAddresses(key) {
     quoter: idToEvmAddress(saucerSwap.quoterId),
     factory: idToEvmAddress(saucerSwap.factoryId),
     whbarToken: idToEvmAddress(saucerSwap.whbarTokenId),
+    v1Router: idToEvmAddress(saucerSwap.v1RouterId),
+    usdcToken: idToEvmAddress(saucerSwap.usdcTokenId),
   };
 }
 
 module.exports = {
   NETWORKS,
+  LOCAL_DEMO,
   SYSTEM_CONTRACTS,
   PYTH_EVM_ADDRESS,
   POOL_FEE_TIERS,

@@ -7,7 +7,7 @@ import {
   type Address,
   type EIP1193Provider,
 } from "viem";
-import type { NetworkConfig } from "@auto-dca/config";
+import type { ActiveNetwork } from "./networks";
 
 declare global {
   interface Window {
@@ -28,17 +28,17 @@ export const GAS = {
 /** Inside the EVM, Hedera counts HBAR in tinybar (8 decimals). JSON-RPC clients send weibar (18). */
 export const TINYBAR_TO_WEIBAR = 10n ** 10n;
 
-export function hederaChain(network: NetworkConfig) {
+export function hederaChain(network: ActiveNetwork) {
   return defineChain({
     id: network.chainId,
     name: network.label,
     nativeCurrency: { name: "HBAR", symbol: "HBAR", decimals: 18 },
     rpcUrls: { default: { http: [network.rpcUrl] } },
-    blockExplorers: { default: { name: "HashScan", url: network.explorerUrl } },
+    ...(network.explorerUrl ? { blockExplorers: { default: { name: "HashScan", url: network.explorerUrl } } } : {}),
   });
 }
 
-export function publicClientFor(network: NetworkConfig) {
+export function publicClientFor(network: ActiveNetwork) {
   return createPublicClient({ chain: hederaChain(network), transport: http(network.rpcUrl) });
 }
 
@@ -49,7 +49,7 @@ export function injectedProvider(): EIP1193Provider {
   return window.ethereum;
 }
 
-export async function switchToNetwork(provider: EIP1193Provider, network: NetworkConfig): Promise<void> {
+export async function switchToNetwork(provider: EIP1193Provider, network: ActiveNetwork): Promise<void> {
   const chainId = `0x${network.chainId.toString(16)}` as const;
   try {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
@@ -64,14 +64,25 @@ export async function switchToNetwork(provider: EIP1193Provider, network: Networ
           chainName: network.label,
           nativeCurrency: { name: "HBAR", symbol: "HBAR", decimals: 18 },
           rpcUrls: [network.rpcUrl],
-          blockExplorerUrls: [network.explorerUrl],
+          ...(network.explorerUrl ? { blockExplorerUrls: [network.explorerUrl] } : {}),
         },
       ],
     });
   }
 }
 
-export async function connectWallet(network: NetworkConfig): Promise<Address> {
+/** The accounts the wallet has already approved for this site, without prompting. The local node's test accounts count. */
+export async function approvedAccounts(network: ActiveNetwork): Promise<Address[]> {
+  return network.key === "local" ? walletClientFor(network).getAddresses() : injectedProvider().request({ method: "eth_accounts" });
+}
+
+export async function connectWallet(network: ActiveNetwork): Promise<Address> {
+  if (network.key === "local") {
+    // The local node has unlocked test accounts, so the demo needs no wallet extension at all.
+    const [account] = await approvedAccounts(network);
+    if (!account) throw new Error("The local demo node is not running. Start it with npm run demo:local.");
+    return account;
+  }
   const provider = injectedProvider();
   const accounts = await provider.request({ method: "eth_requestAccounts" });
   await switchToNetwork(provider, network);
@@ -80,7 +91,10 @@ export async function connectWallet(network: NetworkConfig): Promise<Address> {
   return account;
 }
 
-export function walletClientFor(network: NetworkConfig) {
+export function walletClientFor(network: ActiveNetwork) {
+  if (network.key === "local") {
+    return createWalletClient({ chain: hederaChain(network), transport: http(network.rpcUrl) });
+  }
   return createWalletClient({ chain: hederaChain(network), transport: custom(injectedProvider()) });
 }
 

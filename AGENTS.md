@@ -19,6 +19,7 @@ A scaffold-hbar template: recurring SaucerSwap V2 buys on Hedera, scheduled by H
 | Build | `npm run build` |
 | Deploy to testnet | `npm run hardhat:deploy` |
 | Web app | `npm run next:dev` |
+| Offline demo (no accounts needed) | `npm run demo:local` |
 | Publish run events to HCS (optional) | `npm run hardhat:audit-relay` |
 
 Always run `npm run lint && npm test` before finishing a change. After any change to `AutoDcaVault.sol`'s public interface, regenerate the ABI. `packages/hardhat/test/abi.test.ts` fails if you forget.
@@ -31,6 +32,9 @@ Always run `npm run lint && npm test` before finishing a change. After any chang
 - **Units:** inside the EVM, HBAR amounts (`msg.value`, oracle fees) are tinybar (8 decimals). JSON-RPC clients send weibar (18 decimals). Convert at the client edge only.
 - **Pyth is a pull oracle.** Never assume a fresh price is on-chain. Handle stale prices as a skip, not a revert.
 - **The Pyth API key is server-side only.** Never read `PYTH_API_KEY` in a client component and never prefix it with `NEXT_PUBLIC_`.
+- **The local demo network is separate on purpose.** `LOCAL_DEMO` must never be added to `NETWORKS`. The demo signs through the local node's unlocked accounts, so never put a private key in the frontend. `public/demo-config.json` is generated and git-ignored.
+- **Keep the demo honest.** Mocks must mirror the real interfaces (the mock quoter has a test against SaucerSwap's documented signature). The demo README table of what is real versus mocked must stay accurate.
+- **The pool preview is advice, not protection.** `describeGuard` explains what will probably happen. The binding check is `amountOutMinimum` inside `execute`. Never weaken the contract because the UI shows a preview.
 - **Contracts never write to HCS.** The relay does, off-chain. Do not describe the HCS trail as written by the contract. Keep the topic's submit key set to the relay key, and keep the cursor as `(timestamp, index)`.
 - **EVM version is `paris`** and Solidity is `0.8.24`. Do not use opcodes or features that need a newer EVM.
 
@@ -38,6 +42,8 @@ Always run `npm run lint && npm test` before finishing a change. After any chang
 
 - Contract tests install mocks at the real system addresses with `hardhat_setCode` (see `test/fixture.ts`). Extend the mocks rather than weakening assertions.
 - Every new revert path needs a test. Every new event needs an `emit` assertion.
+- Testnet helper logic (pair checks, the HBAR swap) lives in `packages/hardhat/lib/pairCheck.ts` and `getTokens.ts` and is tested against mocks. Scripts only read env vars and print. Never hard-code a testnet token ID outside `packages/config`.
+- Demo deployment and scheduler logic lives in `packages/hardhat/lib/demo.ts` and is tested in-process (`test/demo.test.ts`). The live script only wraps it in a loop.
 - Relay logic lives in `packages/hardhat/lib/audit.ts` as pure functions. Network calls stay in `scripts/auditRelay.ts`.
 - Web app logic that is not rendering belongs in `packages/nextjs/lib` as a pure function with a vitest test.
 

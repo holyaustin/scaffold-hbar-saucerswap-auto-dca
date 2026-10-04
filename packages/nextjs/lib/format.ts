@@ -49,3 +49,8 @@ export function formatInterval(seconds: number): string {
 export function txUrl(explorerUrl: string, hash: string): string {
   return `${explorerUrl}/transaction/${hash}`;
 }
+
+/** A HashScan link when the network has an explorer, otherwise null (the local demo has none). */
+export function txLink(explorerUrl: string | null, hash: string): string | null {
+  return explorerUrl ? txUrl(explorerUrl, hash) : null;
+}

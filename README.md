@@ -5,17 +5,21 @@ Recurring token buys on **SaucerSwap V2** that run themselves. No keeper bot, no
 - The **Hedera Schedule Service (HSS)** wakes the contract up for every purchase.
 - **Pyth** prices both tokens before each swap. If the price is stale, uncertain or the pool is paying less than the oracle allows, the purchase is **skipped** instead of executed.
 - **HTS** tokens are deposited, held and claimed by the vault (including the association step that trips up most newcomers).
+- Before you spend gas, the web app asks **SaucerSwap's quoter** what the pool would pay right now and compares it with the oracle, so you can see "this purchase would be skipped" in advance.
 - Every run emits an on-chain event that the Hedera **mirror node** serves, which is the audit trail the web app shows.
 - An **optional relay** republishes those events to a **Hedera Consensus Service (HCS)** topic, giving you a tamper-evident public log that only your relay can write to.
 
 A Next.js app lets you create a plan, watch the cadence of purchases, and see exactly why a run was skipped.
 
+**No testnet account yet? Run `npm run demo:local`.** It starts the whole thing offline in about a minute, including the scheduler, and lets you break the market on purpose to watch the guard work. See [Try it first](#try-it-first-the-offline-demo).
+
 > **Status:** testnet is live. Mainnet is fully configured but switched off ("coming soon") until you open it deliberately. See [Networks](#networks-testnet-live-mainnet-coming-soon).
 
 ## Judge's five-minute tour
 
+0. **Run it with nothing set up:** `npm install`, then `npm run demo:local`, then open http://localhost:3000. Create a plan (the form is prefilled), then use **Demo controls** to make the oracle stale or the pool pay 20% less. See [Try it first](#try-it-first-the-offline-demo).
 1. **See the safety logic:** open [`AutoDcaVault.sol`](packages/hardhat/contracts/AutoDcaVault.sol) and read `execute`, `_evaluate` and `_trySwap`. That is the whole idea: price both tokens, set a floor, swap or skip, schedule the next run.
-2. **See it tested:** run `npm test`. 24 of the 43 Hardhat tests exercise the vault itself: every skip reason, the five-skip circuit breaker, scheduling failures and access control.
+2. **See it tested:** run `npm test`. 24 of the 61 Hardhat tests exercise the vault itself: every skip reason, the five-skip circuit breaker, scheduling failures and access control.
 3. **See the network gating:** run `npm run setup` and try to pick Mainnet. It is listed, labelled "coming soon", and refused.
 4. **See it live (needs testnet HBAR):** follow Steps 7 to 11 below, then open the vault's Events tab on HashScan after one interval.
 5. **See the audit trail:** run the optional relay in [Step 13](#step-13-optional-publish-the-audit-trail-to-hcs) and open the topic on HashScan.
@@ -23,16 +27,17 @@ A Next.js app lets you create a plan, watch the cadence of purchases, and see ex
 ## Contents
 
 1. [How it works](#how-it-works)
-2. [Prerequisites](#prerequisites)
-3. [Step-by-step setup](#step-by-step-setup)
-4. [Networks](#networks-testnet-live-mainnet-coming-soon)
-5. [Configuration reference](#configuration-reference)
-6. [Contract reference](#contract-reference)
-7. [Safety model and limits](#safety-model-and-limits)
-8. [What is tested, and what you must verify on testnet](#what-is-tested-and-what-you-must-verify-on-testnet)
-9. [Troubleshooting](#troubleshooting)
-10. [Project structure](#project-structure)
-11. [How this differs from the built-in templates](#how-this-differs-from-the-built-in-templates)
+2. [Try it first: the offline demo](#try-it-first-the-offline-demo)
+3. [Prerequisites](#prerequisites)
+4. [Step-by-step setup](#step-by-step-setup)
+5. [Networks](#networks-testnet-live-mainnet-coming-soon)
+6. [Configuration reference](#configuration-reference)
+7. [Contract reference](#contract-reference)
+8. [Safety model and limits](#safety-model-and-limits)
+9. [What is tested, and what you must verify on testnet](#what-is-tested-and-what-you-must-verify-on-testnet)
+10. [Troubleshooting](#troubleshooting)
+11. [Project structure](#project-structure)
+12. [How this differs from the built-in templates](#how-this-differs-from-the-built-in-templates)
 
 ## How it works
 
@@ -69,6 +74,46 @@ More detail, including the plan state machine, is in [docs/ARCHITECTURE.md](docs
 **Why a guard instead of a plain swap?** A DCA bot that buys at any price will happily buy into a broken pool. The vault derives a minimum acceptable output from two Pyth prices and passes it to the router as `amountOutMinimum`. A bad pool price makes the router revert, and the vault records a skip instead of losing money. After five skips in a row the plan pauses itself so it cannot burn gas forever.
 
 **A note on Pyth and autonomy.** Pyth is a *pull* oracle: prices only exist on-chain after somebody pushes a signed update. A scheduled run cannot fetch one from the internet, so it uses the newest price already on-chain and skips if it is older than your *max price age*. The app's **Refresh price** button (or anyone calling `refreshPrice`) keeps it fresh. This is a property of Pyth, not a bug, and the skip behaviour makes it safe.
+
+**See the guard before you spend gas.** The web app shows a one-line verdict on every active plan. It combines the vault's oracle check (`previewRun`) with a live quote from SaucerSwap's QuoterV2 (an `eth_call`, no gas): for example, *"Price guard would skip: the pool pays 40 WHBAR, 20% less than the oracle's 50 WHBAR. Your limit is 5%."* If no quote is available the app says so and still shows the oracle side.
+
+## Try it first: the offline demo
+
+Want to see the whole loop before creating any accounts? The offline demo needs **no testnet account, no HBAR, no wallet extension and no API keys**.
+
+```bash
+npm install
+npm run demo:local
+```
+
+Then open http://localhost:3000. The first run compiles the contracts, which downloads the Solidity compiler, so it needs internet once. After about a minute the terminal prints `Web app: http://localhost:3000`.
+
+**What to do in the demo** (the whole thing takes about two minutes):
+
+1. Click **Connect demo account**. It uses a built-in test account on the local node and holds 1000 mUSDC.
+2. In **New plan**, everything is prefilled. Click **Deposit and start plan**. The plan buys every 10 seconds.
+3. Watch the cadence strip fill in as purchases happen by themselves, and the **Recent activity** list grow.
+4. In **Demo controls**, click **Make the pool pay 20% less**. The plan's verdict immediately changes to *would skip*, before any transaction, and the next purchase is skipped.
+5. Click it again to restore, then try **Make the oracle price stale** for the other kind of skip.
+6. When the plan finishes, click **Claim** to collect your mWHBAR.
+
+Press Ctrl+C in the terminal to stop everything.
+
+**What is real and what is a stand-in in the demo:**
+
+| Piece | In the demo | On Hedera testnet |
+|-------|-------------|-------------------|
+| `AutoDcaVault` contract | The real contract, unchanged | Same |
+| Web app and its price-guard verdict | The real app | Same |
+| Scheduling | A script (the "scheduler" in the terminal) fires each scheduled call when it is due | The Hedera Schedule Service does it, inside the network |
+| Token Service | A mock (association always succeeds) | Real HTS |
+| Pyth | A mock oracle, kept fresh automatically | Real Pyth with signed updates |
+| SaucerSwap router and quoter | Mocks that pay a fixed rate | Real pools and real liquidity |
+| Explorer links | None (it is a local chain) | HashScan |
+
+So the demo proves the contract's logic and the user experience. It does **not** prove the Hedera integrations: that needs a testnet run (Steps 7 to 11 below).
+
+If a port is busy, the launcher tells you. Use `PORT=3001 npm run demo:local` for the web app. The local node needs port 8545.
 
 ## Prerequisites
 
@@ -162,7 +207,7 @@ This writes a new key into `packages/hardhat/.env` and prints its EVM address.
 npm test
 ```
 
-You should see everything pass: **8 setup tests**, **6 config tests**, **43 Hardhat package tests** and **33 web app tests**. The contract tests replace the Hedera system contracts with mocks, because the Schedule Service does not exist on a local node.
+You should see everything pass: **11 setup and launcher tests**, **7 config tests**, **61 Hardhat package tests** and **50 web app tests**. The contract tests replace the Hedera system contracts with mocks, because the Schedule Service does not exist on a local node.
 
 ### Step 7. Deploy the vault to testnet
 
@@ -178,15 +223,69 @@ Optional settings (put them in `packages/hardhat/.env`): `FUND_HBAR`, `SCHEDULED
 
 ### Step 8. Choose your token pair and price feeds
 
-1. **Pick two HTS tokens that already share a SaucerSwap V2 pool on testnet.** Open the SaucerSwap testnet app, look at its pools, and note a pair that has liquidity. Convert each token's Hedera ID (`0.0.N`) to an EVM address. The simplest way is to open the token on HashScan (https://hashscan.io/testnet) and copy the **EVM address** field, or run:
+This step is where most people lose time, so read it fully before starting. You need three things: two HTS tokens, a SaucerSwap V2 pool that connects them, and a Pyth USD price feed for **each** token.
+
+**8a. Know which testnet tokens exist.** Token IDs are different on testnet and mainnet. Never reuse a mainnet ID. These were checked against public SaucerSwap and community sources on 24 to 26 September 2026, so confirm each on HashScan before relying on it:
+
+| Token | Testnet ID | EVM address | Notes |
+|-------|-----------|-------------|-------|
+| USDC (SaucerSwap's testnet USDC) | `0.0.5449` | `0x0000000000000000000000000000000000001549` | **Not** Circle's testnet USDC `0.0.429274`, which has no SaucerSwap pool |
+| WHBAR (wrapped HBAR) | `0.0.15058` | `0x0000000000000000000000000000000000003ad2` | The token SaucerSwap pools use. Wrapping HBAR into *this* token is not covered here |
+| SAUCE | `0.0.1183558` | run the command below | Has a WHBAR pool, but no Pyth feed has been confirmed for it |
+
+Convert any `0.0.N` to an EVM address with:
+
+```bash
+node -e "console.log(require('./packages/config').idToEvmAddress('0.0.5449'))"
+```
+
+**8b. Know the pools.** SaucerSwap's V2 factory on testnet is `0.0.1197038`. A WHBAR/USDC V2 pool at fee tier `3000` was reported to exist on 26 September 2026. The SaucerSwap testnet app (https://testnet.saucerswap.finance) lists pools.
+
+**Check your pair before anything else.** This read-only command needs no key and spends nothing. It tests all four fee tiers for your pair, shows each pool's liquidity, and explains common mistakes (for example using the WHBAR *contract* `0.0.15057` instead of the WHBAR *token* `0.0.15058`, or Circle's USDC instead of SaucerSwap's):
+
+```bash
+TOKEN_IN=0x0000000000000000000000000000000000001549 TOKEN_OUT=0x0000000000000000000000000000000000003ad2 npm run hardhat:check-pair
+```
+
+Run it with no variables to check USDC against WHBAR. It exits with an error when the pair is not usable, and its last lines say what to change. `npm run hardhat:demo-plan` runs the same check and stops with the same advice.
+
+**8c. Get the tokens into your account.** Testnet tokens have no faucet of their own. You get them by swapping testnet HBAR on the SaucerSwap testnet app:
+
+1. Use **one account everywhere**: your Portal ECDSA account. Import its HEX private key into MetaMask (Import account) and, if the SaucerSwap app needs it, into HashPack. The account then has the same EVM address in every tool.
+2. Fund it with HBAR at https://portal.hedera.com/faucet.
+3. Open https://testnet.saucerswap.finance/trade and connect a wallet that the app offers.
+4. Sell HBAR and buy USDC, choosing the one with ID `0.0.5449`. Several tokens can share the name USDC, so check the ID. Approve any association prompts.
+5. Confirm on HashScan (https://hashscan.io/testnet) that your account page lists USDC `0.0.5449` with a balance.
+
+**If the app's swap fails** (for example with a "Slippage" error), try these in order:
+
+1. Open the failed transaction on HashScan (the hash is in the error). The revert reason is on that page, and it tells you whether this is slippage, an expired quote or a missing association.
+2. Swap a smaller amount (1 to 5 HBAR). Testnet pools are thin, so a large swap moves the price.
+3. Raise the slippage tolerance in the app's settings and retry.
+4. Use the command line instead. It buys USDC through SaucerSwap's V1 router, which is separate from the contract the web app used:
 
    ```bash
-   node -e "console.log(require('./packages/config').idToEvmAddress('0.0.1183558'))"
+   HBAR_TO_SWAP=10 SLIPPAGE_PCT=10 npm run hardhat:get-usdc
    ```
 
-   (That example converts the testnet SAUCE token ID.)
-2. **Pick the Pyth feed ID for each token's USD price** from the list linked in the prerequisites table. If a token is a stablecoin, use its USD feed too.
-3. **Make sure your account holds the token you plan to sell**, and is **associated** with the token you plan to buy (`TOKEN=0x... npm run hardhat:associate`).
+   It associates your account with USDC if needed, asks the router for a quote, and swaps with the slippage you allow. It prints the transaction and account links.
+
+**8d. Pick the Pyth feeds.** Each token needs a USD feed from https://docs.pyth.network/price-feeds/core/price-feed-ids. Use the regular (stable) IDs on Hedera testnet.
+
+- USDC/USD is `0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a` (listed in several Pyth documentation pages).
+- Find HBAR/USD on the same Pyth page by searching "HBAR". Treat WHBAR as HBAR for pricing.
+- **Check any ID before using it.** With your Pyth key, ask Hermes for the latest price and confirm it matches the real market:
+
+  ```bash
+  curl -sg -H "Authorization: Bearer YOUR_PYTH_KEY" \
+    "https://hermes.pyth.network/v2/updates/price/latest?ids[]=THE_FEED_ID&parsed=true"
+  ```
+
+  In the answer, the real price is `price` multiplied by 10 to the power of `expo`. HBAR should be roughly ten US cents. A wrong or unsupported ID returns an error or an absurd price.
+
+**8e. Know what to expect on testnet.** Testnet pools are seeded with arbitrary prices, and Pyth reports real market prices. On 26 September 2026 the testnet WHBAR/USDC pools priced HBAR at about two US dollars while Pyth said about nine US cents. So for a plan that **sells USDC to buy WHBAR**, the pool pays roughly 95% less than the oracle expects, and the guard will **skip every run**. That is the guard working, and it is a genuine live demonstration of it, but it also means this pair will not produce an executed purchase on testnet. The plan card shows the verdict ("would skip: the pool pays X% less than the oracle") before any run happens. Treat a skip here as a correct result, not a bug.
+
+**8f. Before the scheduled run, push a fresh price.** Pyth only has a price on-chain after someone pushes one, so click **Refresh price** in the app (this needs your Pyth key from Step 3) shortly before the first run. Without it the run skips as "price too old".
 
 ### Step 9. Create your first plan
 
@@ -313,6 +412,8 @@ Where "coming soon" is enforced:
 | `HCS_TOPIC_ID` | no | created on first relay run | Reuse an existing audit topic |
 | `RELAY_WATCH` | no | `false` | `true` keeps the relay running |
 | `RELAY_INTERVAL_SECONDS` | no | `30` | Polling interval in watch mode |
+| `HBAR_TO_SWAP` | no | `10` | HBAR spent by `hardhat:get-usdc` |
+| `SLIPPAGE_PCT` | no | `10` | Slippage allowed by `hardhat:get-usdc`, in percent |
 | `TOKEN_IN`, `TOKEN_OUT`, `POOL_FEE`, `AMOUNT_PER_RUN`, `RUNS`, `INTERVAL_SECONDS`, `MAX_SLIPPAGE_BPS`, `MAX_CONF_BPS`, `MAX_PRICE_AGE`, `PRICE_ID_IN`, `PRICE_ID_OUT` | for `demo-plan` | see `.env.example` | Demo plan parameters |
 
 ### `packages/nextjs/.env.local`
@@ -325,14 +426,19 @@ Where "coming soon" is enforced:
 | `PYTH_HERMES_URL` | no | `https://hermes.pyth.network` | Hermes endpoint |
 | `NEXT_PUBLIC_HCS_TOPIC_ID` | no | from `deployments.json` | Show a link to your audit topic |
 
+The offline demo sets `NEXT_PUBLIC_HEDERA_NETWORK=local` itself and needs no `.env` files. `PORT` (default `3000`) changes the demo's web port.
+
 ### Commands
 
 | Command | What it does |
 |---------|--------------|
+| `npm run demo:local` | Offline demo: local node, mock services, scheduler and web app (no accounts needed) |
 | `npm run setup` | Network choice and local env files |
 | `npm run hardhat:compile` | Compile contracts |
 | `npm run hardhat:test` | Contract tests |
 | `npm run hardhat:account` | Generate a deployer key |
+| `npm run hardhat:check-pair` | Read-only check that a token pair has a usable SaucerSwap V2 pool (all fee tiers) |
+| `npm run hardhat:get-usdc` | Buy testnet USDC with testnet HBAR from the command line |
 | `npm run hardhat:deploy` | Deploy the vault to testnet |
 | `npm run hardhat:demo-plan` | Create a plan from `.env` values |
 | `npm run hardhat:audit-relay` | Publish run events to an HCS topic (optional) |
@@ -374,10 +480,12 @@ Events: `PlanCreated`, `RunScheduled`, `ScheduleFailed`, `RunExecuted`, `RunSkip
 
 - 24 vault tests covering plan creation and validation, HSS scheduling and retries, the busy-second search, execution accounting, every skip reason, the five-skip circuit breaker, pause, resume, cancel, claim, access control, oracle refresh and refunds, and the HBAR admin path.
 - 6 deploy-helper tests (key parsing and the mainnet guard) and 1 drift test that fails if the web app's ABI no longer matches the compiled contract.
+- 13 tests for the testnet helpers: the pair checker (fee tiers, token order, liquidity, and the classic address mix-ups) and the HBAR-to-USDC swap (association first, quote, slippage, drift, empty pool).
 - 12 relay tests: event decoding, ordering and resuming inside a transaction, message size limits, and the Hedera SDK transaction builders (built and frozen offline).
-- 33 web app tests covering formatting, form validation, mirror node log decoding, activity text, network gating and both API routes.
-- 8 setup tests: network gating, saving the Pyth key without ever printing it, and safe re-runs.
-- 6 config tests for the Hedera ID to EVM address conversion and the network registry.
+- 50 web app tests covering formatting, form validation, mirror node log decoding, the pool-versus-oracle comparison and its wording, demo config validation, local event reading, network gating and both API routes.
+- 5 demo tests: the demo deployment, a full plan run by the emulated scheduler, a stale-oracle skip, a bad-pool skip, and the mock quoter matching SaucerSwap's documented `quoteExactInput` signature.
+- 11 setup and launcher tests: network gating, saving the Pyth key without ever printing it, safe re-runs, and the launcher's port and polling helpers.
+- 7 config tests for the Hedera ID to EVM address conversion, the network registry and the separate local demo network.
 
 **Not verifiable without a live network. Check each one on testnet and fix the template if the result differs:**
 
@@ -388,6 +496,8 @@ Events: `PlanCreated`, `RunScheduled`, `ScheduleFailed`, `RunExecuted`, `RunSkip
 5. **Token association from your wallet** (`associate()` and `isAssociated()` from HIP-719) as used by **Claim** and `npm run hardhat:associate`.
 6. **The mirror node log response shape and the `timestamp=gte:` filter** used by the activity feed and the relay. Both are tested against fixtures only. If the feed stays empty, plan data still loads from the chain.
 7. **Publishing to a real HCS topic.** The relay's SDK calls are validated offline, but creating a topic and submitting messages needs your funded account. Run `npm run hardhat:audit-relay` and confirm the messages appear on HashScan.
+9. **The command-line swap and pair checker on testnet.** `hardhat:get-usdc` uses SaucerSwap's V1 router (`0.0.19264`) with `getAmountsOut` and `swapExactETHForTokens`, and `hardhat:check-pair` reads the V2 factory. Both are tested against mocks only. If either fails, the error message and the HashScan transaction page say why.
+8. **The live pool quote on testnet.** The QuoterV2 signature matches SaucerSwap's documentation and the demo mock, but the call against the real testnet quoter and your pair's liquidity is unverified. If the app shows "pool quote is not available", the vault still checks the pool price when a purchase runs.
 
 ## Troubleshooting
 
@@ -403,6 +513,13 @@ Events: `PlanCreated`, `RunScheduled`, `ScheduleFailed`, `RunExecuted`, `RunSkip
 | Every run is skipped with "Price too old" | No fresh on-chain price | Use **Refresh price** (needs `PYTH_API_KEY`), or raise max price age |
 | Every run is skipped with "Pool price worse than oracle" | Pool price differs from the oracle by more than your slippage | Raise max slippage, or pick a deeper pool |
 | **Refresh price** says `PYTH_API_KEY is not set` | No key configured | Add it to `packages/nextjs/.env.local` and restart |
+| `demo-plan` says "This pair cannot be used at fee 3000" | No V2 pool at that fee, a wrong token address, or an empty pool | Run `npm run hardhat:check-pair` with the same `TOKEN_IN`, `TOKEN_OUT` and `POOL_FEE`. It lists every fee tier and says what to change |
+| The SaucerSwap app swap fails with "Slippage" | Thin testnet pool, an expired quote, or the pool moved | See the numbered steps under Step 8c. The command-line swap `npm run hardhat:get-usdc` bypasses the app |
+| `hardhat:get-usdc` says the pool moved more than your allowance | Price changed between quote and swap | Retry with a higher `SLIPPAGE_PCT` or a smaller `HBAR_TO_SWAP` |
+| Demo says port 8545 or 3000 is in use | Another local node or web app is running | Stop it, or use `PORT=3001 npm run demo:local` for the web port |
+| Demo page says "Waiting for the demo to finish deploying" | The scheduler has not written its config yet | Wait a few seconds, then check the `[scheduler]` lines in the terminal |
+| Demo plans never run | The scheduler process stopped | Restart `npm run demo:local`. It deploys fresh contracts each time |
+| "Pool quote is not available" on testnet | No pool for the pair and fee tier, or the quoter call failed | Check the pool exists (`npm run hardhat:demo-plan` checks it), and try another fee tier |
 | Relay says `Set HEDERA_ACCOUNT_ID` | The relay needs the account that pays for HCS messages | Add `HEDERA_ACCOUNT_ID=0.0.N` to `packages/hardhat/.env` |
 | Relay fails with `INVALID_SIGNATURE` | The account ID and private key belong to different accounts | Use the ID of the account that owns `DEPLOYER_PRIVATE_KEY` |
 | Relay prints `No new events to publish` | Nothing happened since the last run | Wait for a scheduled run, or delete `deployments/hcs-relay-state.testnet.json` to republish everything |
@@ -417,6 +534,7 @@ Events: `PlanCreated`, `RunScheduled`, `ScheduleFailed`, `RunExecuted`, `RunSkip
 ├── README.md  AGENTS.md  LICENSE
 ├── docs/ARCHITECTURE.md           sequence diagram and state machine
 ├── scripts/setup.mjs              network choice, Pyth key prompt and env file creation (with tests)
+├── scripts/demo-local.mjs         one-command offline demo launcher
 ├── .github/workflows/ci.yml       lint, test, build
 └── packages/
     ├── config/                    networks, addresses, ID conversion (single source of truth)
@@ -425,20 +543,20 @@ Events: `PlanCreated`, `RunScheduled`, `ScheduleFailed`, `RunExecuted`, `RunSkip
     │   │   ├── AutoDcaVault.sol the template
     │   │   ├── interfaces/        Pyth, SaucerSwap router, Hedera system contracts
     │   │   ├── libraries/         PriceMath (oracle math, no reverts)
-    │   │   └── mocks/             HSS, HTS, Pyth, router, ERC-20 for tests
+    │   │   └── mocks/             HSS, HTS, Pyth, router, quoter, ERC-20 for tests and the demo
     │   ├── test/                  vault, helper and ABI drift tests
     │   ├── scripts/               deploy, demo plan, account, associate, ABI export, HCS audit relay
-    │   └── lib/                   env parsing, deploy-target guard, audit records, HCS and deployment helpers
+    │   └── lib/                   env parsing, deploy-target guard, audit records, HCS and deployment helpers, demo deployment and scheduler, pair checker, HBAR swap
     └── nextjs/
         ├── app/                   page, layout, /api/health, /api/pyth-update
-        ├── components/            dashboard, plan card, cadence strip, form, network switch
-        ├── lib/                   wallet, mirror node, Pyth proxy, formatting, validation
+        ├── components/            dashboard, plan card, cadence strip, form, network switch, demo controls
+        ├── lib/                   wallet, mirror node, quote and guard wording, Pyth proxy, formatting, validation, demo config
         └── tests/                 web app tests
 ```
 
 ## How this differs from the built-in templates
 
-scaffold-hbar already ships `payments-scheduler` (a Foundry vault with pluggable strategies), `cross-chain-dca` (Axelar and Uniswap on Sepolia) and `oracles` (provider adapters). This template is narrower and complements them: a **single-chain** DCA on **SaucerSwap V2 on Hedera**, with a Pyth guard that decides per run whether to buy, an automatic circuit breaker, a permissionless fallback if scheduling fails, a mirror-node activity feed, an optional tamper-evident HCS audit relay, and a Hardhat toolchain.
+scaffold-hbar already ships `payments-scheduler` (a Foundry vault with pluggable strategies), `cross-chain-dca` (Axelar and Uniswap on Sepolia) and `oracles` (provider adapters). This template is narrower and complements them: a **single-chain** DCA on **SaucerSwap V2 on Hedera**, with a Pyth guard that decides per run whether to buy, an automatic circuit breaker, a permissionless fallback if scheduling fails, a live pool-versus-oracle check in the UI, a mirror-node activity feed, an optional tamper-evident HCS audit relay, a one-command offline demo, and a Hardhat toolchain.
 
 ## License
 

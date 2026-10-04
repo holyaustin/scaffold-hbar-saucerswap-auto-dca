@@ -10,6 +10,9 @@ contract MockPyth is IPyth {
     mapping(bytes32 => PythStructs.Price) private prices;
     mapping(bytes32 => bool) private known;
 
+    /// @dev Demo switch: while true every read behaves as if the price were too old.
+    bool public simulateStale;
+
     error PriceFeedNotFound();
     error StalePrice();
 
@@ -18,8 +21,13 @@ contract MockPyth is IPyth {
         known[id] = true;
     }
 
+    function setSimulateStale(bool stale) external {
+        simulateStale = stale;
+    }
+
     function getPriceNoOlderThan(bytes32 id, uint256 age) external view returns (PythStructs.Price memory) {
         if (!known[id]) revert PriceFeedNotFound();
+        if (simulateStale) revert StalePrice();
         PythStructs.Price memory p = prices[id];
         if (block.timestamp > p.publishTime + age) revert StalePrice();
         return p;

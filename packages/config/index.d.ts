@@ -6,6 +6,8 @@ export interface SaucerSwapIds {
   readonly quoterId: string;
   readonly factoryId: string;
   readonly whbarTokenId: string;
+  readonly v1RouterId: string;
+  readonly usdcTokenId: string;
 }
 
 export interface NetworkConfig {
@@ -27,6 +29,8 @@ export interface SaucerSwapAddresses {
   quoter: string;
   factory: string;
   whbarToken: string;
+  v1Router: string;
+  usdcToken: string;
 }
 
 export const NETWORKS: Readonly<Record<NetworkKey, NetworkConfig>>;
@@ -38,3 +42,20 @@ export function idToEvmAddress(id: string): string;
 export function isLive(network: { status: string }): boolean;
 export function resolveNetworkKey(key: string | undefined | null): NetworkKey;
 export function saucerSwapAddresses(key: NetworkKey): SaucerSwapAddresses;
+
+export interface LocalDemoConfig {
+  readonly key: "local";
+  readonly label: string;
+  readonly status: "live";
+  readonly chainId: number;
+  readonly hardhatName: string;
+  readonly rpcUrl: string;
+  readonly mirrorUrl: null;
+  readonly explorerUrl: null;
+  readonly faucetUrl: null;
+  readonly pyth: null;
+  readonly saucerSwap: null;
+}
+
+/** Offline demo network. Not part of NETWORKS on purpose. */
+export const LOCAL_DEMO: LocalDemoConfig;

@@ -13,7 +13,11 @@
     "deploy": "hardhat run scripts/deploy.ts --network hederaTestnet",
     "demo-plan": "hardhat run scripts/createDemoPlan.ts --network hederaTestnet",
     "associate": "hardhat run scripts/associateToken.ts --network hederaTestnet",
-    "audit-relay": "hardhat run scripts/auditRelay.ts --network hederaTestnet"
+    "audit-relay": "hardhat run scripts/auditRelay.ts --network hederaTestnet",
+    "node": "hardhat node",
+    "demo-local": "hardhat run scripts/demoLocal.ts --network localhost",
+    "get-usdc": "hardhat run scripts/getTestUsdc.ts --network hederaTestnet",
+    "check-pair": "hardhat run scripts/checkPair.ts --network hederaTestnet"
   },
   "dependencies": {
     "@auto-dca/config": "*",
